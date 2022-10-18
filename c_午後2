@@ -1,0 +1,218 @@
+
+##### パッケージのインストール＋読込
+install.packages(c("spacetime","RColorBrewer","sf","spTimer"))#初回のみ
+library(spacetime)   # 毎回
+library(RColorBrewer)
+library(sf)
+library(spTimer)
+
+############################################################
+########## PM10濃度データを分析用フォーマットに成形 ########
+############################################################
+# この部分はairデータ固有の処理なので、ご理解いただかなくても問題ございません。
+# スライドにも説明がないので、必要に応じてコード内のコメントを参照ください。
+
+data(air)                                    # PM10濃度データの読込
+coords <- st_coordinates(st_as_sf(stations)) # PM10濃度の観測地点座標
+coords0<- expand.grid(px = seq(6,15, 0.5), py = seq(47, 55, 0.5))#予測地点の座標
+
+target_dates   <- as.Date("2008-04-01") + seq(0,60,len=6)#対象時点:2008/4/1から10日おきの6日
+target_dates_id<- which(dates %in% target_dates)
+target_air     <- air[,target_dates_id]      #対象時点のデータだけ抽出
+
+dat    <- NULL   # 観測地点のデータを分析用に成形
+for(i in 1:length(coords[,1])){
+  dat_sub<- data.frame(date=target_dates,px=coords[i,1],py=coords[i,2],PM10=target_air[i,])
+  dat  <- rbind(dat,dat_sub)
+}
+
+dat0   <- NULL   # 予測地点のデータを分析用に成形
+for(i in 1:length(coords0[,1])){
+  dat0_sub<- data.frame(date=target_dates,px=coords0[i,1],py=coords0[i,2])
+  dat0  <- rbind(dat0,dat0_sub)
+}
+
+forecast_dates   <- max(target_dates) + (1:2)*6# 将来予測の対象2時点
+dat1   <- NULL   # 予測地点のデータを将来予測を行う2時点でも成形
+for(i in 1:length(coords0[,1])){
+  dat1_sub<- data.frame(date=forecast_dates,px=coords0[i,1],py=coords0[i,2])
+  dat1  <- rbind(dat1,dat1_sub)
+}
+
+############################################################
+##########    PM10濃度(5/31)の空間予測(内挿)    ############
+############################################################
+
+##### データ（111枚目）
+target_date<-"2008-05-31"
+dat_sp     <-na.omit(dat[dat$date==target_date,])# 観測地点のデータ
+dat0_sp    <-dat0[dat0$date==target_date,]       # 予測地点のデータ
+dat_sp[1:4,]
+dat0_sp[1:4,]
+
+##### レンジパラメータの事前分布（114枚目）
+# M1(結果)のAcceptance rate for phi (%)が15-40 %になるようtuningを試行錯誤
+
+std_dist     <- sqrt( sd(dat_sp[,"px"])^2 + sd(dat_sp[,"py"])^2 )
+spatial.decay<- spT.decay(distribution=Gamm(std_dist,1), tuning=3)
+
+# 参考：難しい場合は以下のコマンドでレンジを固定値とすることもできます。
+# こちらの場合、Acceptance rateは無視してください
+#
+# spatial.decay<- spT.decay(distribution="FIXED", value=std_dist)
+
+###### 空間統計モデルの推定（115枚目）
+formula      <- PM10 ~ px
+M1           <- spT.Gibbs(formula = formula, data=dat_sp, 
+                          coords=~px+py,
+                          model="GP", 
+                          nItr=7000, 
+                          nBurn = 2000, 
+                          spatial.decay=spatial.decay,
+                          tol.dist=0.0)
+summary(M1)
+
+###### 空間予測（116枚目）
+pred_s       <-predict(M1, 
+                       newdata=dat0_sp, 
+                       newcoords=~px+py)
+
+###### 予測値の地図化（116枚目; コードについては17枚目も参照）
+dat0_sp$pred_m   <-apply(pred_s$pred.samples,1,mean)
+dat0_sp$pred_sd  <-apply(pred_s$pred.samples,1,sd)
+dat0_sp[1:3,]
+dat0_sp2  <-st_as_sf(dat0_sp, coords = c("px", "py"))# sf形式に変換
+
+var       <- "pred_m"　# 地図化する変数の列名
+nc        <- 10        # 色の数
+breaks    <- seq(7, 33, len=nc+1)         # 色の区切り位置
+pal       <- rev(brewer.pal(nc, "RdYlBu"))# カラーパレット生成
+plot(dat0_sp2[, var],pch=15,
+     nbreaks=20,axes=TRUE,cex=2,
+     key.pos = 4,key.length = 0.5)# 凡例の位置(key.pos)と長さ(key.length)
+
+############補足: もしpredict関数でエラーが出たら (117枚目)
+# spT.Gibbs関数の引数tol.distにdist3で出力される値を小さい順位
+# でひとつづつ入れていき、エラーが出なくなった値を採用
+# 以下のコードで実行できます。
+#install.packages("FNN")
+#library(FNN)
+#dist         <- get.knn(dat_sp2[,c("px","py")],1)$nn.dist
+#dist2        <- unique(sort(dist))
+#dist3        <- (dist2[-1]+dist2[-length(dist2)])/2
+#M1           <- spT.Gibbs(formula = formula, data=dat_sp, tol.dist=dist3[1],
+#                          spatial.decay=spatial.decay,
+#                          nItr=7000, nBurn = 2000, model="GP", coords=~px+py)
+#pred_s       <- predict(M1,newdata=dat0_sp, newcoords=~px+py)
+#
+#もしエラーが出たらdist3[1]をdist3[2]に置き換える
+#もしエラーが出たらdist3[2]をdist3[3]に置き換える（以後、同様）
+
+
+############################################################
+##########    PM10濃度時空間予測(内挿)    ##################
+############################################################
+
+##### 時空間データ
+#dat2<-dat[dat$date==target_dates[1],-1]
+#for(tt in target_dates[-1]){
+#  dat2<-cbind(dat2,dat[dat$date==tt,"PM10"])
+#}
+#dat2<-data.frame(dat2);names(dat2)[-(1:2)]<-as.character(target_dates)
+#dat3<-st_as_sf(dat2,coords=c("px","py"))
+#plot(dat3[,1:6], axes=TRUE, pch=20, cex=2.5, key.pos=4, nbreaks=20)
+
+##### データ（124枚目）
+dat[1:4,]   #観測地点・時点のデータ
+dat0[1:4,]  #予測地点・時点のデータ
+
+##### レンジパラメータの事前分布（125枚目）
+# M1(結果)のAcceptance rate for phi (%)が15-40 %になるようtuningを試行錯誤
+
+std_dist     <- sqrt( var(dat[,"px"]) +var(dat[,"py"]) )
+spatial.decay<- spT.decay(distribution=Gamm(std_dist,1), tuning=0.1)
+
+###### 時点別の空間モデルの推定（125枚目）
+formula <- PM10 ~ px
+M2      <- spT.Gibbs(formula = formula, data=dat, model="GP",
+                     nItr=7000, nBurn = 2000, coords=~px+py,
+                     spatial.decay=spatial.decay, tol.dist=0.0)
+
+###### 動的時空間モデルの推定（125枚目）
+M3      <- spT.Gibbs(formula = formula, data=dat, model="AR",
+                     nItr=7000, nBurn = 2000, coords=~px+py,
+                     spatial.decay=spatial.decay, tol.dist=0.0)
+
+###### 推定結果（126枚目）
+summary(M2)
+summary(M3)
+
+###### Predictive model choice criteriaの比較（126枚目）
+compare <- data.frame(rbind(M2$PMCC, M3$PMCC))
+rownames(compare)<-c("GP","AR")
+compare
+
+###### 動的時空間モデルによる時空間予測（127枚目）
+pred_s     <-predict(M3,newdata=dat0, newcoords=~px+py)
+dat0$pred_m<-apply(pred_s$pred.samples,1,mean)
+
+## 4/1の結果を地図化
+dat02      <-st_as_sf(dat0[dat0$date=="2008-04-01",], coords = c("px", "py"))
+plot(dat02[,"pred_m"], axes=TRUE, pch=15,
+     nbreaks=40,cex=2,key.pos = 4,key.length = 0.5)
+
+## 参考：6日の結果をまとめて地図化する場合
+var       <-"pred_m"
+for(date in target_dates){
+  if(date==target_dates[1]){
+    dat0b <-dat0[dat0$date==date,c("px","py",var)]
+  } else {
+    dat0b <-cbind(dat0b,dat0[dat0$date==date,var] )
+  }
+}
+dat0c       <-data.frame(dat0b)
+names(dat0c)<-c("px","py",as.character(target_dates))
+dat0d       <-st_as_sf(dat0c, coords = c("px", "py"))
+
+nc        <- 10
+breaks    <- seq(7, 33, len=nc+1)
+pal       <- rev(brewer.pal(nc, "RdYlBu"))
+plot(dat0d[, as.character(target_dates)],pch=15,
+     nbreaks=40,axes=TRUE,cex=2,
+     key.pos = 4,key.length = 0.5)
+
+############################################################
+##########    PM10濃度の時空間将来予測    ##################
+############################################################
+
+###### 動的時空間モデルによる時空間の将来予測（129枚目）
+pred_st   <-predict(M3,newdata=dat1, newcoords=~px+py,
+                       type="temporal",
+                       foreStep=2, 
+                       predAR=pred_s)
+dat1$pred_m  <-apply(pred_st$fore.samples,1,mean)# 予測値（事後平均）
+dat1$pred_sd <-apply(pred_st$fore.samples,1,sd)  # 予測誤差分散（事後分散）
+
+## 将来予測した2時点の予測結果の地図化
+
+var       <-"pred_m" # 地図化する変数の列名（予測値）
+for(date in forecast_dates){
+  if(date==forecast_dates[1]){
+    dat1b <-dat1[dat1$date==date,c("px","py",var)]
+  } else {
+    dat1b <-cbind(dat1b,dat1[dat1$date==date,var] )
+  }
+}
+dat1c       <-data.frame(dat1b)#時点毎の予測値を列毎に並べたデータ
+names(dat1c)<-c("px","py",as.character(forecast_dates))
+dat1d       <-st_as_sf(dat1c, coords = c("px", "py"))  #sf形式に変換
+
+plot(dat1d[, as.character(forecast_dates)],pch=15,
+     nbreaks=40,axes=TRUE,cex=2,
+     key.pos = 4,key.length = 0.5)
+
+## 時空間補間(内挿)6時点＋将来予測2時点の予測結果の地図化
+dat01d<-cbind(dat0d,dat1d)#時点毎の予測値を列毎に並べたデータ
+plot(dat01d[, 1:8],pch=15,
+     nbreaks=40,axes=TRUE,cex=3,
+     key.pos = 4,key.length = 0.5)
