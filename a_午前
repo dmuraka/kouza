@@ -165,6 +165,3 @@ plot(pref[,"lgeary_p"], pal = pal, breaks=breaks)
 
 
 
-
-
-
