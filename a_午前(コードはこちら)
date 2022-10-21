@@ -4,12 +4,13 @@
 #####################################################################
 
 #### パッケージのインストール（初回のみ）
-install.packages( c("sf", "NipponMap", "RColorBrewer") ) 
+install.packages( c("sf", "NipponMap", "RColorBrewer", "tibble") ) 
 
 #### パッケージの読込（毎回）
 library( sf )
 library( NipponMap )
 library( RColorBrewer )
+library( tibble )
 
 #### 都道府県ポリゴン（シェープファイル形式）の読込（15枚目）
 shp      <- system.file("shapes/jpn.shp", package = "NipponMap")[1]
