@@ -1,0 +1,126 @@
+
+#### パッケージのインストール＋読込
+install.packages( c("CARBayes", "CARBayesST", "CARBayesdata") ) # 初回のみ
+install.packages( c("spdep", "sf", "RColorBrewer") )
+
+library(CARBayes)
+library(CARBayesST)
+library(CARBayesdata)
+library(spdep)
+library(sf)
+library(RColorBrewer)
+
+##### グラスゴーの呼吸器疾患データ（75枚目）
+data(pollutionhealthdata)
+data(GGHB.IZ)
+pollutionhealthdata[1:3,]
+GGHB.IZ[1:3,]
+
+dat     <- pollutionhealthdata
+dat_sub <- dat[dat$year==2008,]       ## データ（2008年）
+
+W.nb    <- poly2nb(GGHB.IZ)
+W       <- nb2mat(W.nb, style = "B")	## 隣接行列
+
+## ポアソン回帰(80枚目)
+formula <- observed ~ offset(log(expected)) + jsa + price + pm10
+mod0    <- S.glm(formula=formula, data=dat_sub, family="poisson",
+                  n.sample=50000, burnin=10000)
+
+######################################################
+#### 空間CARモデリング ################################
+######################################################
+
+## ICARモデル（80枚目）
+mod1    <- S.CARleroux(formula=formula, data=dat_sub, family="poisson", 
+                       W=W, n.sample=50000, burnin=10000, rho=1)
+
+## Lerouxモデル（80枚目）
+mod2    <- S.CARleroux(formula=formula, data=dat_sub, family="poisson", 
+                       W=W, n.sample=50000, burnin=10000)
+
+## モデル比較(81枚目)
+mod0$modelfit
+mod1$modelfit
+mod2$modelfit
+
+## 推定された疾病リスクの地図化（82枚目）
+dat_sub$predGLM<- mod0$fitted.values
+dat_sub$predCAR<- mod2$fitted.values
+dat_sub_2<- merge(x=GGHB.IZ, y=dat_sub, by="IZ", all.x=FALSE, 
+                  duplicateGeoms = TRUE) 
+
+nc	    <- 11
+breaks  <- seq(10, 200, len=nc+1)
+pal     <- rev(brewer.pal(nc, "RdYlBu"))
+plot(dat_sub_2[, c("observed","predGLM","predCAR")], pal=pal, 
+     breaks=breaks, axes=TRUE, border=NA) # border=NA:境界線を非表示
+
+#######################################################
+#### 時空間CARモデリング ###############################
+#######################################################
+
+##### グラスゴーの呼吸器疾患データ（87-89枚目）
+data(pollutionhealthdata)
+data(GGHB.IZ)
+
+dat     <- pollutionhealthdata
+W.nb   	<- poly2nb(GGHB.IZ)
+W      	<- nb2mat(W.nb, style = "B")
+dat[1:4,]
+
+## ポアソン回帰(90枚目)
+formula <- observed ~ offset(log(expected)) + jsa + price + pm10
+mod0    <- S.glm(formula=formula, family="poisson", data = dat, 
+                 n.sample=50000, burnin=10000)
+
+## 時空間CARモデル（時間ラグ1; 90枚目）
+mod1   <- ST.CARar(formula = formula, family = "poisson", data = dat, 
+                   AR=1, W = W, n.sample=50000, burnin=10000)
+
+## 時空間CARモデル（時間ラグ1;90枚目）
+mod2   <- ST.CARar(formula = formula, family = "poisson", data = dat, 
+                   AR=2, W = W, n.sample=50000, burnin=10000)
+
+## 時空間CAR-ANOVAモデル（90枚目）
+mod3   <- ST.CARanova(formula = formula, family = "poisson", data = dat, 
+                      W = W, n.sample=50000, burnin=10000)
+
+## モデル比較(91枚目)
+mod0$modelfit
+mod1$modelfit
+mod2$modelfit
+mod3$modelfit
+
+## パラメータ推定値(92枚目)
+mod0
+mod1
+
+## 回帰係数の事後分布の視覚化(93枚目)
+beta_num<-4 # 定数項、jsa、price、pm10のなかの何番目を視覚化するか
+xlim    <-range(c(mod0$samples$beta[,beta_num]),c(mod1$samples$beta[,beta_num]))
+hist(mod0$samples$beta[,beta_num], xlim=xlim, 
+     20, freq=FALSE, col=rgb(0,0,1,0.5))
+hist(mod1$samples$beta[,beta_num], xlim=c(0.0,0.07),
+     20, freq=FALSE, col=rgb(1,0,0,0.5), add=TRUE)
+
+## 回帰係数の事後分布の視覚化(93枚目)
+dat$predGLM  <-mod0$fitted.values
+dat$predCAR  <-mod1$fitted.values
+
+#### 2007年の疾病リスクの地図化(95枚目; コードについては17枚目も参照)
+dat2	  <- merge(x=GGHB.IZ, y=dat, by="IZ", 
+                 all.x=FALSE, duplicateGeoms = TRUE)
+
+dat2_sub<- dat2[dat2$year==2007,] # 地図化のために2007年だけ取り出す
+nc	    <- 11
+breaks  <- seq(10, 200, len=nc+1)
+pal     <- rev(brewer.pal(nc, "RdYlBu"))
+plot(dat2_sub[, c("observed","predGLM","predCAR")], pal=pal, 
+     breaks=breaks, axes=TRUE, border=NA)
+
+#### IZ番目のゾーンにおける予測値(mod1)の不確実性評価(96枚目)
+IZ       <- unique(dat2$IZ)[3] # 3番目のゾーン
+mod1_samp<-data.frame( mod1$samples$fitted[,dat$IZ==IZ] )
+names(mod1_samp)<- c(2007,2008,2009,2010,2011)
+boxplot( mod1_samp,ylim=c(10,140))
