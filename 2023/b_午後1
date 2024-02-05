@@ -1,12 +1,10 @@
 ################## 整備中 #################
 
+#install.packages(c("dplyr","ggplot2","sdmTMB","sf"))
 library(dplyr)
 library(ggplot2)
 library(sdmTMB)
 library(sf)
-library(rnaturalearthhires)
-library(rnaturalearth)
-library(INLAspacetime)
 
 pcod   <-data.frame(pcod[pcod$year>=2009, c("year","X","Y","depth","density","present")])
 pcod[1:10,]
@@ -103,6 +101,12 @@ tidy(fit2, effects = "ran_pars", conf.int = TRUE)
 
 ##################################################
 ################################################## Modeling considering physical barrier
+# install.packages(c("remotes","sdmTMBextra","rnaturalearthhires","rnaturalearth"))
+# remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
+library(rnaturalearthhires)
+library(rnaturalearth)
+library(sdmTMB)
+library(sdmTMBextra)
 
 data(pcod)  # reload data
 pcod      <-data.frame(pcod[pcod$year>=2009,])
@@ -158,7 +162,6 @@ ggplot(p_s) +
   scale_color_gradient(low = "lightgrey", high = "red")
 
 
-  
 
 
 
