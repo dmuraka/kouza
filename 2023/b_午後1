@@ -1,126 +1,169 @@
+################## 整備中 ##################
 
-#### パッケージのインストール＋読込
-install.packages( c("CARBayes", "CARBayesST", "CARBayesdata") ) # 初回のみ
-install.packages( c("spdep", "sf", "RColorBrewer") )
-
-library(CARBayes)
-library(CARBayesST)
-library(CARBayesdata)
-library(spdep)
+library(dplyr)
+library(ggplot2)
+library(sdmTMB)
 library(sf)
-library(RColorBrewer)
+library(rnaturalearthhires)
+library(rnaturalearth)
+library(INLAspacetime)
 
-##### グラスゴーの呼吸器疾患データ（75枚目）
-data(pollutionhealthdata)
-data(GGHB.IZ)
-pollutionhealthdata[1:3,]
-GGHB.IZ[1:3,]
+pcod   <-data.frame(pcod[pcod$year>=2009, c("year","X","Y","depth","density","present")])
+pcod[1:10,]
+####### logistic regression example
+pcod_s <- st_as_sf(pcod,coords=c("X","Y"))
+ggplot(pcod_s) + 
+  geom_sf(aes(color = present)) +
+  facet_wrap(~year) + 
+  theme_minimal() +
+  scale_color_gradient(low = "lightgrey", high = "red")
 
-dat     <- pollutionhealthdata
-dat_sub <- dat[dat$year==2008,]       ## データ（2008年）
+####### spatial logistic regression1
+mesh <- make_mesh(pcod, xy_cols = c("X", "Y"), cutoff = 1)
+plot(mesh,pch=1)
 
-W.nb    <- poly2nb(GGHB.IZ)
-W       <- nb2mat(W.nb, style = "B")	## 隣接行列
+fit0 <- sdmTMB(
+  present ~ as.factor( year ),
+  data = pcod,
+  mesh = mesh,
+  family = binomial(link = "logit"),
+  spatial = "on",
+  reml=FALSE)
+plot( pcod$depth, predict(fit0)$est)
 
-## ポアソン回帰(80枚目)
-formula <- observed ~ offset(log(expected)) + jsa + price + pm10
-mod0    <- S.glm(formula=formula, data=dat_sub, family="poisson",
-                  n.sample=50000, burnin=10000)
+####### spatial logistic regression2
+fit1<- sdmTMB(
+  present ~ s(depth) + as.factor( year ),
+  data = pcod,
+  mesh = mesh,
+  family = binomial(link = "logit"),
+  spatial = "on",
+  reml=FALSE)
 
-######################################################
-#### 空間CARモデリング ################################
-######################################################
+AIC(fit0)
+AIC(fit1)
 
-## ICARモデル（80枚目）
-mod1    <- S.CARleroux(formula=formula, data=dat_sub, family="poisson", 
-                       W=W, n.sample=50000, burnin=10000, rho=1)
+fit1
+tidy(fit1, conf.int = TRUE)
+tidy(fit1, effects = "ran_pars", conf.int = TRUE)
 
-## Lerouxモデル（80枚目）
-mod2    <- S.CARleroux(formula=formula, data=dat_sub, family="poisson", 
-                       W=W, n.sample=50000, burnin=10000)
+####### spatial prediction
+qcs_grid2<-NULL
+for(year in unique(pcod$year)){
+  qcs_grid_sub<-data.frame(year,qcs_grid[,1:3])
+  qcs_grid2   <-rbind(qcs_grid2,qcs_grid_sub)
+}
 
-## モデル比較(81枚目)
-mod0$modelfit
-mod1$modelfit
-mod2$modelfit
+qcs_grid2[1:2,]
+p   <- predict(fit1, newdata = qcs_grid2, type="response")
+p[1:3,]
+p_s <- st_as_sf(p,coords=c("X","Y"))
+ggplot(p_s) + 
+  geom_sf(aes(color = est),pch=15,cex=0.5) +
+  facet_wrap(~year) + 
+  theme_minimal() +
+  scale_color_gradient(low = "lightgrey", high = "red")
 
-## 推定された疾病リスクの地図化（82枚目）
-dat_sub$predGLM<- mod0$fitted.values
-dat_sub$predCAR<- mod2$fitted.values
-dat_sub_2<- merge(x=GGHB.IZ, y=dat_sub, by="IZ", all.x=FALSE, 
-                  duplicateGeoms = TRUE) 
+####### spatio-temporal logistic regression
+fit2<- sdmTMB(
+  present ~ s(depth) + as.factor( year ),
+  data = pcod,
+  mesh = mesh,
+  family = binomial(link = "logit"),
+  spatial = "on",
+  time = "year",
+  spatiotemporal = "ar1",
+  reml=FALSE)
 
-nc	    <- 11
-breaks  <- seq(10, 200, len=nc+1)
-pal     <- rev(brewer.pal(nc, "RdYlBu"))
-plot(dat_sub_2[, c("observed","predGLM","predCAR")], pal=pal, 
-     breaks=breaks, axes=TRUE, border=NA) # border=NA:境界線を非表示
+AIC(fit1)
+AIC(fit2)
 
-#######################################################
-#### 時空間CARモデリング ###############################
-#######################################################
+####### spatio-temporal prediction
+p2   <- predict(fit2, newdata = qcs_grid2, type="response")
+p2[1:3,]
+p2_s <- st_as_sf(p2,coords=c("X","Y"))
+ggplot(p2_s) + 
+  geom_sf(aes(color = est),pch=15,cex=0.5) +
+  facet_wrap(~year) + 
+  theme_minimal() +
+  scale_color_gradient(low = "lightgrey", high = "red")
 
-##### グラスゴーの呼吸器疾患データ（87-89枚目）
-data(pollutionhealthdata)
-data(GGHB.IZ)
+####### uncertainty of the prediction
+p2_sim     <- predict(fit2, newdata = qcs_grid2, type="response", nsim=500)
+p2_s$est_sd<- apply(p2_sim, 1, sd)
+ggplot(p2_s) + 
+  geom_sf(aes(color = est_sd),pch=15,cex=0.5) +
+  facet_wrap(~year) + 
+  theme_minimal() +
+  scale_color_gradient(low = "lightgrey", high = "red")
 
-dat     <- pollutionhealthdata
-W.nb   	<- poly2nb(GGHB.IZ)
-W      	<- nb2mat(W.nb, style = "B")
-dat[1:4,]
+fit2
+tidy(fit2, conf.int = TRUE)
+tidy(fit2, effects = "ran_pars", conf.int = TRUE)
 
-## ポアソン回帰(90枚目)
-formula <- observed ~ offset(log(expected)) + jsa + price + pm10
-mod0    <- S.glm(formula=formula, family="poisson", data = dat, 
-                 n.sample=50000, burnin=10000)
+##################################################
+################################################## Modeling considering physical barrier
 
-## 時空間CARモデル（時間ラグ1; 90枚目）
-mod1   <- ST.CARar(formula = formula, family = "poisson", data = dat, 
-                   AR=1, W = W, n.sample=50000, burnin=10000)
+data(pcod)  # reload data
+pcod      <-data.frame(pcod[pcod$year>=2009,])
+canada_map<- ne_countries(scale = "large",country="canada")
+pcod_map  <- st_crop(canada_map, 
+                     c(xmin = -132, ymin = 50, 
+                       xmax = -127, ymax = 53))
 
-## 時空間CARモデル（時間ラグ1;90枚目）
-mod2   <- ST.CARar(formula = formula, family = "poisson", data = dat, 
-                   AR=2, W = W, n.sample=50000, burnin=10000)
+pcod_s<-st_as_sf(pcod,coords=c("lon","lat"), 
+                 crs=st_crs(pcod_map))
 
-## 時空間CAR-ANOVAモデル（90枚目）
-mod3   <- ST.CARanova(formula = formula, family = "poisson", data = dat, 
-                      W = W, n.sample=50000, burnin=10000)
+ggplot(pcod_map) + geom_sf() +
+  theme_minimal() + geom_sf(data = pcod_s, size = 1)
 
-## モデル比較(91枚目)
-mod0$modelfit
-mod1$modelfit
-mod2$modelfit
-mod3$modelfit
+##########
+mesh      <- make_mesh(pcod, xy_cols = c("lon", "lat"), cutoff=0.005)
+bmesh     <- add_barrier_mesh(spde_obj = mesh, 
+                              barrier_sf = pcod_map, 
+                              range_fraction = 0.001)
 
-## パラメータ推定値(92枚目)
-mod0
-mod1
+fit <- sdmTMB(present ~ 1,data = pcod,mesh = bmesh,
+              family = binomial(link = "logit"),spatial = "on")
 
-## 回帰係数の事後分布の視覚化(93枚目)
-beta_num<-4 # 定数項、jsa、price、pm10のなかの何番目を視覚化するか
-xlim    <-range(c(mod0$samples$beta[,beta_num]),c(mod1$samples$beta[,beta_num]))
-hist(mod0$samples$beta[,beta_num], xlim=xlim, 
-     20, freq=FALSE, col=rgb(0,0,1,0.5))
-hist(mod1$samples$beta[,beta_num], xlim=c(0.0,0.07),
-     20, freq=FALSE, col=rgb(1,0,0,0.5), add=TRUE)
 
-## 回帰係数の事後分布の視覚化(93枚目)
-dat$predGLM  <-mod0$fitted.values
-dat$predCAR  <-mod1$fitted.values
+mesh_water <- bmesh$mesh_sf[bmesh$normal_triangles , ]
+mesh_land  <- bmesh$mesh_sf[bmesh$barrier_triangles, ]
 
-#### 2007年の疾病リスクの地図化(95枚目; コードについては17枚目も参照)
-dat2	  <- merge(x=GGHB.IZ, y=dat, by="IZ", 
-                 all.x=FALSE, duplicateGeoms = TRUE)
 
-dat2_sub<- dat2[dat2$year==2007,] # 地図化のために2007年だけ取り出す
-nc	    <- 11
-breaks  <- seq(10, 200, len=nc+1)
-pal     <- rev(brewer.pal(nc, "RdYlBu"))
-plot(dat2_sub[, c("observed","predGLM","predCAR")], pal=pal, 
-     breaks=breaks, axes=TRUE, border=NA)
+ggplot(pcod_map) + geom_sf() +
+  geom_sf(data = mesh_water, size = 0.8, colour = "blue") +
+  geom_sf(data = mesh_land, size = 2, colour = "red")
 
-#### IZ番目のゾーンにおける予測値(mod1)の不確実性評価(96枚目)
-IZ       <- unique(dat2$IZ)[3] # 3番目のゾーン
-mod1_samp<-data.frame( mod1$samples$fitted[,dat$IZ==IZ] )
-names(mod1_samp)<- c(2007,2008,2009,2010,2011)
-boxplot( mod1_samp,ylim=c(10,140))
+fit <- sdmTMB(present ~ 1,data = pcod,mesh = bmesh,
+              family = binomial(link = "logit"),spatial = "on")
+
+#crs_utm9         <- 3156 # Pick a projection, here UTM9
+#st_crs(pcod_map) <- 4326 # 'WGS84'; necessary on some installs
+#pcod_map<- st_transform(pcod_map, crs_utm9)
+qcs_grid[1:2,]
+qcs_grid$X1000<- qcs_grid$X*1000# km to m
+qcs_grid$Y1000<- qcs_grid$Y*1000# km to m
+qcs_grid_s    <-st_as_sf(qcs_grid, coords=c("X1000","Y1000"),crs=3156)#UTM9
+qcs_grid_s    <- st_transform(qcs_grid_s, 4326) # to WGS84
+qcs_grid_coords<-st_coordinates(qcs_grid_s)
+qcs_grid$lon  <-qcs_grid_coords[,1]
+qcs_grid$lat  <-qcs_grid_coords[,2]
+
+p   <- predict(fit, newdata = qcs_grid, type="response")
+p_s <- st_as_sf(p,coords=c("lon","lat"))
+ggplot(p_s) + 
+  geom_sf(aes(color = est),pch=15) +
+  theme_minimal() +
+  scale_color_gradient(low = "lightgrey", high = "red")
+
+
+  
+
+
+
+
+
+
+
+
