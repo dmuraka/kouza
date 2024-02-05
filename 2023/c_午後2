@@ -1,1 +1,114 @@
-#
+# 作成中 *************************
+
+
+#install.packages("CARBayesdata")
+library(sdmTMB);library(sf);library(mapview)
+library(CARBayesdata);library(INLA)
+
+data(pollutionhealthdata)
+data(GGHB.IZ)
+
+pd    <- pollutionhealthdata
+coords<- st_coordinates(st_centroid(GGHB.IZ))
+pd$X  <- coords[,1]/1000
+pd$Y  <- coords[,2]/1000
+
+mesh <- make_mesh( pd, xy_cols = c("X", "Y"), cutoff = 0.01)
+plot(mesh)
+
+################## modeling
+
+fit0  <- glm(observed ~ as.factor( year ) + pm10 + jsa + price,
+             offset = log( pd$expected ),
+             family = poisson(link = "log"),
+             data = pd)
+
+fit1  <- sdmTMB(observed ~ as.factor( year ) + pm10 ,
+                offset = log( pd$expected ),
+                family = poisson(link = "log"),
+                data = pd,
+                mesh = mesh,
+                spatial_varying = ~jsa + price,
+                spatial = "on", 
+                reml=FALSE)
+
+fit2  <- sdmTMB( observed ~ as.factor( year ) + pm10,
+                offset = log( pd$expected ),
+                data = pd,
+                family = poisson(link = "log"),
+                mesh = mesh,
+                spatial_varying = ~jsa + price,
+                spatial = "on",
+                time = "year",
+                spatiotemporal="rw", 
+                reml=FALSE)
+
+AIC(fit0)
+AIC(fit1)
+AIC(fit2)
+
+fit2
+?tidy.sdmTMB
+
+tidy(fit2, conf.int = TRUE)
+tidy(fit2, "ran_pars",conf.int = TRUE)
+
+summary(fit0)
+
+################## predictive distribution for the spatially varying coefficients
+svc_sim       <-  predict(fit2, sims_var="zeta_s", nsim=500)
+
+######## mapping
+svc_jsa0        <- t( apply(svc_sim$jsa, 1, function(x) quantile(x, probs=c(0.025, 0.5, 0.975) ) ) )
+svc_jsa         <- svc_jsa0[,2]
+svc_jsa_signif  <- ifelse(svc_jsa0[,1]>0 | svc_jsa0[,3]<0,svc_jsa,NA)
+
+svc_price0      <- t( apply(svc_sim$price,1, function(x) quantile(x, probs=c(0.025, 0.5, 0.975) ) ) )
+svc_price       <- svc_price0[,2]
+svc_price_signif<- ifelse(svc_price0[,1] > 0 | svc_price0[,3] < 0,svc_price,NA)
+
+######## mapping
+year                  <- 2007
+GGHB.IZ$jsa           <- pd$jsa [pd$year==year]
+GGHB.IZ$svc_jsa       <- svc_jsa [pd$year==year]
+GGHB.IZ$svc_jsa_signif<- svc_jsa_signif[pd$year==year]
+plot(GGHB.IZ[,c("jsa")],lwd=0.2,axes=TRUE, key.pos=4,nbreaks=50)
+plot(GGHB.IZ[,c("svc_jsa", "svc_jsa_signif")],
+     lwd=0.2,axes=TRUE, key.pos=4,nbreaks=50)
+
+GGHB.IZ$price         <- pd$price[pd$year==year]
+GGHB.IZ$svc_price     <- svc_price[pd$year==year]
+GGHB.IZ$svc_price_signif<- svc_price_signif[pd$year==year]
+plot(GGHB.IZ[,c("price")],lwd=0.2,axes=TRUE, key.pos=4,nbreaks=50)
+plot(GGHB.IZ[,c("svc_price","svc_price_signif")],
+     lwd=0.2,axes=TRUE, key.pos=4,nbreaks=50)
+
+################## predictive distribution for y
+pred_sim      <-  predict(fit2, nsim=500, type="response", 
+                          offset= log(pd$expected))
+
+pred_stat     <- t( apply(pred_sim,1, function(x) quantile(x, probs=c(0.025, 0.5, 0.975) ) ) )
+pred_stat[1:4,]
+
+boxplot(t(pred_sim)[,1:5])
+
+pd$low95      <- pred_stat[,1]
+pd$med        <- pred_stat[,2]
+pd$up95       <- pred_stat[,3]
+
+year          <- 2011
+GGHB.IZ$observed <- pd$observed[pd$year==year]
+GGHB.IZ$low95 <- pd$low95[pd$year==year]
+GGHB.IZ$med   <- pd$med  [pd$year==year]
+GGHB.IZ$up95  <- pd$up95 [pd$year==year]
+breaks<-seq(15,225,5)
+plot(GGHB.IZ[,c("observed")],lwd=0.1,axes=TRUE, key.pos=4,breaks=breaks)
+
+plot(GGHB.IZ[,c("low95","med","up95")],lwd=0.1,axes=TRUE, key.pos=4,breaks=breaks)
+
+mapview(GGHB.IZ[,"med"],alpha.regions=0.5)
+
+
+
+
+
