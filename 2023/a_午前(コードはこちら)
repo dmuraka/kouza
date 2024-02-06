@@ -34,7 +34,7 @@ plot(pref[, "population"], pal=pal, breaks=breaks, main="Population by prefectur
      axes=TRUE, xlim=c(130,146),ylim=c(31,46),key.pos = 4, key.length = 0.6 )
 
 #####################################################################
-#### 隣接関係の地図化 (スライド23-24枚目) #############################
+#### 隣接関係の地図化 (スライド26-27枚目) #############################
 #####################################################################
 
 #### パッケージのインストール＋読込
@@ -60,12 +60,11 @@ plot(st_geometry(pref), col="white", border="grey")
 plot(nb_q, coords, add=TRUE, col="red",cex=0.01,lwd=1.5)
 
 #####################################################################
-#### モランI統計量による空間相関の分析 (スライド31-43枚目) #############
+#### モランI統計量による空間相関の分析 (スライド35-43枚目) #############
 #####################################################################
 
 ##### パッケージのインストール＋読込(スライドなし)
-# install.packages(c("rgdal", "spdep", "RColorBrewer", "NipponMap")) 
-library(rgdal)
+# install.packages(c("spdep", "RColorBrewer", "NipponMap")) 
 library(spdep)
 library(RColorBrewer)
 library(NipponMap)
