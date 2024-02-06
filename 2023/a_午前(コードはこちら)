@@ -1,10 +1,10 @@
 
 ####################################################################
-#### Rによる空間データの処理・地図化の基礎 (スライド15-17枚目) #########
+#### Rによる空間データの処理・地図化の基礎 (スライド17-20枚目) #########
 ####################################################################
 
 #### パッケージのインストール（初回のみ）
-install.packages( c("sf", "NipponMap", "RColorBrewer", "tibble") ) 
+#install.packages( c("sf", "NipponMap", "RColorBrewer", "tibble") ) 
 
 #### パッケージの読込（毎回）
 library( sf )
@@ -12,55 +12,55 @@ library( NipponMap )
 library( RColorBrewer )
 library( tibble )
 
-#### 都道府県ポリゴン（シェープファイル形式）の読込（15枚目）
+#### 都道府県ポリゴン（シェープファイル形式）の読込（17枚目）
 shp      <- system.file("shapes/jpn.shp", package = "NipponMap")[1]
 pref     <- read_sf(shp)
 
-#### 地図化1（15枚目）
-pref[1:4,]
-plot( pref[, "population"], nbreaks=20 )
+#### 地図化1（18枚目）
+pref[1:3,]
+plot( pref[, "population"], axes=TRUE )
 
-#### 地図化2（16枚目）
+#### 地図化2（19枚目）
 display.brewer.all()
 nc       <-7
 pal      <- brewer.pal(nc, "RdYlGn")
 plot(pref[, "population"],pal=pal, nbreaks=nc)
 
-#### 地図化3（17枚目）
+#### 地図化3（20枚目）
 breaks   <-c(0, 1000000, 2000000, 3000000, 5000000, 8000000, max(pref$population))
 nc       <-length(breaks)-1
 pal      <-rev( brewer.pal(nc, "RdYlGn") )
-plot(pref[, "population"], pal=pal, breaks=breaks,main="Population by prefecture",axes=TRUE, 
-     xlim=c(130,146),ylim=c(31,46),key.pos = 4, key.length = 0.6 )
+plot(pref[, "population"], pal=pal, breaks=breaks, main="Population by prefecture",
+     axes=TRUE, xlim=c(130,146),ylim=c(31,46),key.pos = 4, key.length = 0.6 )
 
 #####################################################################
 #### 隣接関係の地図化 (スライド23-24枚目) #############################
 #####################################################################
 
 #### パッケージのインストール＋読込
-install.packages( "spdep" ) # 初回のみ
+#install.packages( "spdep" ) # 初回のみ
 library(spdep)              # 毎回
 
-#### 都道府県別データの読込（23枚目）
+#### 都道府県データの読込（26枚目）
 shp     <- system.file("shapes/jpn.shp", package = "NipponMap")[1]
 pref0   <- read_sf(shp) 
-pref	  <- pref0[pref0$name != "Okinawa",]
+pref	   <- pref0[pref0$name != "Okinawa",]
 coords  <- st_coordinates(st_centroid(pref))
 
-##### 最近隣4地点(都道府県の重心点)に基づく隣接関係（23枚目）
+##### 最近隣4地点(都道府県の重心点)に基づく隣接関係（26枚目）
 knn     <- knearneigh(coords,4)
 nb      <- knn2nb(knn)
 plot(st_geometry(pref), border="grey")
 plot(nb, coords, add = TRUE, col="red",cex=0.01, lwd=1.5)
 
-##### Queen型の隣接関係の場合（24枚目）
+##### 隣接（Queen型）の隣接関係の場合（27枚目）
 nb_q    <- poly2nb(pref,snap=0.05)
 nb_q
 plot(st_geometry(pref), col="white", border="grey")
 plot(nb_q, coords, add=TRUE, col="red",cex=0.01,lwd=1.5)
 
 #####################################################################
-#### モランI統計量による空間相関の分析 (スライド31-39枚目) #############
+#### モランI統計量による空間相関の分析 (スライド31-43枚目) #############
 #####################################################################
 
 ##### パッケージのインストール＋読込(スライドなし)
@@ -73,20 +73,20 @@ library(NipponMap)
 ##### 都道府県データの読込(スライドなし)
 shp     <- system.file("shapes/jpn.shp", package = "NipponMap")[1]
 pref0   <- read_sf(shp) 
-pref	  <- pref0[pref0$name != "Okinawa",]
+pref	   <- pref0[pref0$name != "Okinawa",]
 coords  <- st_coordinates(st_centroid(pref))
 pop     <- pref$population
 
-##### 最近隣4ゾーンに基づく隣接行列(31枚目)
+##### 最近隣4ゾーンに基づく隣接行列(35枚目)
 knn     <- knearneigh(coords,4)
 nb      <- knn2nb(knn)
 w       <- nb2listw(nb)
 
-##### モランI統計量の評価(33枚目)
+##### モランI統計量の評価(35 or 37枚目)
 moran	  <- moran.test(pop, listw=w)
 moran
 
-##### ローカルモランI統計量の評価(36枚目)
+##### ローカルモランI統計量の評価(40枚目)
 lmoran	<- localmoran(pop, listw=w)
 lmoran[1:3,]
 
@@ -104,11 +104,11 @@ nc   	  <- length(breaks)-1
 pal 	  <- rev( brewer.pal(n = nc, name = "YlOrRd" ))
 plot(pref[,"lmoran_p"], pal = pal, breaks=breaks)
 
-##### モラン散布図(38枚目)
+##### モラン散布図(42枚目)
 moran.plot(pop, listw=w, labels=pref$name, pch=20,
            xlim=c(-1000000,13000000),ylim=c(1000000,8000000))
 
-##### モラン散布図に基づく地域分類(39枚目)
+##### モラン散布図に基づく地域分類(43枚目)
 str(lmoran)
 moran_cl<- attr(lmoran,"quadr")$mean
 pref$moran_cl<-moran_cl
@@ -124,13 +124,13 @@ plot(pref[,"moran_cl"],
      key.length=0.5)
 
 #####################################################################
-#### ローカル・ギアリ統計量による空間相関の分析 (スライド46枚目) ########
+#### ローカル・ギアリ統計量による空間相関の分析 (スライド50枚目) ########
 #####################################################################
 
-###### ローカル・ギアリ統計量の評価(46枚目)
+###### ローカル・ギアリ統計量の評価(50枚目)
 lgeary0 <- localC_perm(pop, listw=w)
 
-###### 同統計量に基づく地域分類(46枚目)
+###### 同統計量に基づく地域分類(50枚目)
 lgeary0  <- localC_perm(pop, listw=w)
 geary_cl <- attr(lgeary0,"cluster")
 
@@ -162,7 +162,4 @@ breaks	<- c( 0, 0.01, 0.05, 0.10, 1 )
 nc   	  <- length(breaks)-1
 pal 	  <- rev( brewer.pal(n = nc, name = "YlOrRd" ))
 plot(pref[,"lgeary_p"], pal = pal, breaks=breaks)
-
-
-
 
