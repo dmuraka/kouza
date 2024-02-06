@@ -134,15 +134,11 @@ library(sf)
 library(ggplot2)
 
 ####### データの読み込みと地図化（93枚目）
-data(pcod)  # reload data
-pcod      <-data.frame(pcod[pcod$year>=2009,])
-canada_map<- ne_countries(scale = "large",country="canada")
-pcod_map  <- st_crop(canada_map, 
-                     c(xmin = -132, ymin = 50, 
-                       xmax = -127, ymax = 53))
-
-pcod_s<-st_as_sf(pcod,coords=c("lon","lat"), 
-                 crs=st_crs(pcod_map))
+data(pcod)                                     # Pacific codデータ
+pcod      <- data.frame(pcod[pcod$year>=2009,])# 2009年以降のみを用いる
+canada_map<- ne_countries(scale = "large",country="canada")# カナダの陸地データ
+pcod_map  <- st_crop(canada_map, c(xmin = -132, ymin = 50, xmax = -127, ymax = 53))#対象地域付近の陸地(制約)
+pcod_s    <- st_as_sf(pcod,coords=c("lon","lat"), crs=st_crs(pcod_map))
 
 ggplot(pcod_map) + geom_sf() +
   theme_minimal() + geom_sf(data = pcod_s, size = 1)
@@ -163,7 +159,8 @@ fit <- sdmTMB(present ~ 1,data = pcod,mesh = bmesh,
               family = binomial(link = "logit"),spatial = "on")
 
 ####### 空間予測のためのデータ整備（参考；スライド無し）
-## 
+## 緯度経度をqcs_gridに付与するための操作
+## （地形データにあわせて緯度経度でモデル推定を行ったため必要）
 qcs_grid$X1000<- qcs_grid$X*1000# X座標をkmからm単位に変更
 qcs_grid$Y1000<- qcs_grid$Y*1000# Y座標をkmからm単位に変更
 qcs_grid_s    <- st_as_sf(qcs_grid, coords=c("X1000","Y1000"),crs=3156)#UTM座標系から
