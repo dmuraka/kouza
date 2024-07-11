@@ -1,6 +1,6 @@
 
 #### パッケージのインストール＋読込
-install.packages( c("CARBayes", "CARBayesST", "CARBayesdata") ) # 初回のみ
+install.packages( c("CARBayes", "CARBayesST", "CARBayesdata") ) # 初回のみ　
 install.packages( c("spdep", "sf", "RColorBrewer") )
 
 library(CARBayes)
