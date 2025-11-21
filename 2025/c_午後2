@@ -1,0 +1,119 @@
+#############################################################
+##### sdmTMBによる空間可変パラメータモデリング(104-130枚目) #
+#############################################################
+
+#install.packages(c("CARBayesdata")
+library(sdmTMB);library(sf);library(mapview)
+library(CARBayesdata)#;library(INLA)
+
+####### グラスゴー都市圏の呼吸器疾患の患者数データの読込（104枚目）
+data(pollutionhealthdata)
+data(GGHB.IZ)
+pd    <- pollutionhealthdata
+
+####### 空間メッシュの生成（111枚目）
+coords<- st_coordinates(st_centroid(GGHB.IZ))
+pd$X  <- coords[,1]/1000
+pd$Y  <- coords[,2]/1000
+
+mesh  <- make_mesh( pd, xy_cols = c("X", "Y"), cutoff = 0.01)
+plot(mesh)
+
+####### ポアソン回帰（112枚目）
+fit0  <- glm(observed ~ as.factor( year ) + pm10 + jsa + price,
+             offset = log( pd$expected ),
+             family = poisson(link = "log"),
+             data = pd)
+
+####### 空間ポアソン回帰（112枚目）
+fit1  <- sdmTMB(observed ~ as.factor( year ) + pm10 ,
+                offset = log( pd$expected ),
+                family = poisson(link = "log"),
+                data = pd,
+                mesh = mesh,
+                spatial_varying = ~jsa + price,
+                spatial = "on", 
+                reml=FALSE)
+
+####### 時空間ポアソン回帰（113枚目）
+fit2  <- sdmTMB( observed ~ as.factor( year ) + pm10,
+                 offset = log( pd$expected ),
+                 data = pd,
+                 family = poisson(link = "log"),
+                 mesh = mesh,
+                 spatial_varying = ~jsa + price,
+                 spatial = "on",
+                 time = "year",
+                 spatiotemporal="rw", 
+                 reml=FALSE)
+
+####### 精度比較（113枚目）
+AIC(fit0)
+AIC(fit1)
+AIC(fit2)
+
+####### パラメータ推定結果（114-115枚目）
+fit2
+#?tidy.sdmTMB  # ヘルプの表示
+
+tidy(fit2, conf.int = TRUE)           #回帰係数の推定結果の要約
+tidy(fit2, "ran_pars",conf.int = TRUE)#分散パラメータの推定結果の要約
+
+####### 推定された空間可変パラメータ（SVC）の取得（117枚目）
+svc_sim       <-  predict(fit2, sims_var="zeta_s", nsim=500)
+
+######## SVCとその統計的有意性（5%水準）の評価 (スライド無し)
+## jsa
+svc_jsa0        <- t( apply(svc_sim$jsa, 1, function(x) quantile(x, probs=c(0.025, 0.5, 0.975) ) ) )
+svc_jsa         <- svc_jsa0[,2]
+svc_jsa_signif  <- ifelse(svc_jsa0[,1]>0 | svc_jsa0[,3]<0,svc_jsa,NA)
+
+## price
+svc_price0      <- t( apply(svc_sim$price,1, function(x) quantile(x, probs=c(0.025, 0.5, 0.975) ) ) )
+svc_price       <- svc_price0[,2]
+svc_price_signif<- ifelse(svc_price0[,1] > 0 | svc_price0[,3] < 0,svc_price,NA)
+
+######## SVCの地図化 (117枚目)
+year                  <- 2007 # SVCは時間不変のため他の年でも結果は同じ
+
+## jsa
+GGHB.IZ$jsa           <- pd$jsa [pd$year==year]
+GGHB.IZ$svc_jsa       <- svc_jsa [pd$year==year]
+GGHB.IZ$svc_jsa_signif<- svc_jsa_signif[pd$year==year]
+plot(GGHB.IZ[,c("jsa")],lwd=0.2,axes=TRUE, key.pos=4,nbreaks=50)
+plot(GGHB.IZ[,c("svc_jsa", "svc_jsa_signif")],
+     lwd=0.2,axes=TRUE, key.pos=4,nbreaks=50)
+
+## price
+GGHB.IZ$price         <- pd$price[pd$year==year]
+GGHB.IZ$svc_price     <- svc_price[pd$year==year]
+GGHB.IZ$svc_price_signif<- svc_price_signif[pd$year==year]
+plot(GGHB.IZ[,c("price")],lwd=0.2,axes=TRUE, key.pos=4,nbreaks=50)
+plot(GGHB.IZ[,c("svc_price","svc_price_signif")],
+     lwd=0.2,axes=TRUE, key.pos=4,nbreaks=50)
+
+######## 期待患者数（疾病リスク）の予測 (129枚目)
+pred_sim      <-  predict(fit2, nsim=500, type="response", 
+                          offset= log(pd$expected))
+
+pred_stat     <- t( apply(pred_sim,1, function(x) quantile(x, probs=c(0.025, 0.5, 0.975) ) ) )
+pred_stat[1:4,]
+
+######## 予測値の不確実性評価 (130枚目)
+# 箱ひげ図
+boxplot(t(pred_sim)[,1:5])
+
+# 5, 50, 95パーセンタイルの地図化 
+pd$low95      <- pred_stat[,1]
+pd$med        <- pred_stat[,2]
+pd$up95       <- pred_stat[,3]
+
+year          <- 2011
+GGHB.IZ$low95 <- pd$low95[pd$year==year]
+GGHB.IZ$med   <- pd$med  [pd$year==year]
+GGHB.IZ$up95  <- pd$up95 [pd$year==year]
+breaks<-seq(15,225,5)
+plot(GGHB.IZ[,c("low95","med","up95")],lwd=0.1,axes=TRUE, key.pos=4,breaks=breaks)
+
+# 参考：mapviewによる地図化
+mapview(GGHB.IZ[,"med"],alpha.regions=0.5)
