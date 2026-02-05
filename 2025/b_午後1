@@ -119,10 +119,10 @@ ggplot(p2_s) +
   scale_color_gradient(low = "lightgrey", high = "red")
 
 #####################################################################
-##### 地理的制約を考慮する場合の時空間モデリング(93-95枚目; 参考) ###
+##### 地理的制約を考慮する場合の時空間モデリング(93-95枚目; 参考) ###########
 #####################################################################
 
-#install.packages(c("remotes","sdmTMBextra","rnaturalearth"))
+#install.packages(c("remotes","rnaturalearth"))
 #remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
 #remotes::install_github("ropensci/rnaturalearthhires")
  
