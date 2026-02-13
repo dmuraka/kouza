@@ -113,7 +113,6 @@ ggplot(p2_s) +
 ##### Spatiotemmporal modeling considering physical barrier #########
 #####################################################################
 
-#install.packages(c("remotes","rnaturalearth"))
 #remotes::install_github("pbs-assess/sdmTMBextra", dependencies = TRUE)
 #remotes::install_github("ropensci/rnaturalearthhires")
  
